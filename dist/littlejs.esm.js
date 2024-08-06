@@ -264,6 +264,10 @@ function debugRender()
     {
         const saveContext = mainContext;
         mainContext = overlayContext;
+        
+        // draw red rectangle around screen
+        const cameraSize = getCameraSize();
+        debugRect(cameraPos, cameraSize.subtract(vec2(.1)), '#f008');
 
         // mouse pick
         let bestDistance = Infinity, bestObject;
@@ -2294,21 +2298,6 @@ function drawRect(pos, size, color, angle, useWebGL, screenSpace, context)
     drawTile(pos, size, undefined, color, angle, false, undefined, useWebGL, screenSpace, context); 
 }
 
-/** Draw colored polygon using passed in points
- *  @param {Array}   points - Array of Vector2 points
- *  @param {Color}   [color=(1,1,1,1)]
- *  @param {Boolean} [screenSpace=false]
- *  @param {CanvasRenderingContext2D} [context=mainContext]
- *  @memberof Draw */
-function drawPoly(points, color=new Color, screenSpace, context=mainContext)
-{
-    context.fillStyle = color.toString();
-    context.beginPath();
-    for (const point of screenSpace ? points : points.map(worldToScreen))
-        context.lineTo(point.x, point.y);
-    context.fill();
-}
-
 /** Draw colored line between two points
  *  @param {Vector2} posA
  *  @param {Vector2} posB
@@ -2761,7 +2750,12 @@ function gamepadsUpdate()
         }
     }
 
-    if (!gamepadsEnable || !navigator || !navigator.getGamepads || !document.hasFocus() && !debug)
+    // return if gamepads are disabled or not supported
+    if (!gamepadsEnable || !navigator || !navigator.getGamepads)
+        return;
+
+    // only poll gamepads when focused or in debug mode
+    if (!debug && !document.hasFocus())
         return;
 
     // poll gamepads
@@ -3275,6 +3269,11 @@ function getNoteFrequency(semitoneOffset, rootFrequency=220)
  *  @memberof Audio */
 let audioContext = new AudioContext;
 
+/** Keep track if audio was suspended when last sound was played
+ *  @type {Boolean}
+ *  @memberof Audio */
+let audioSuspended = false;
+
 /** Play cached audio samples with given settings
  *  @param {Array}   sampleChannels - Array of arrays of samples to play (for stereo playback)
  *  @param {Number}  [volume] - How much to scale volume by
@@ -3289,11 +3288,15 @@ function playSamples(sampleChannels, volume=1, rate=1, pan=0, loop=false, sample
     if (!soundEnable) return;
 
     // prevent sounds from building up if they can't be played
-    if (audioContext.state != 'running')
+    const audioWasSuspended = audioSuspended;
+    if (audioSuspended = audioContext.state != 'running')
     {
         // fix stalled audio
         audioContext.resume();
-        return;
+
+        // prevent suspended sounds from building up
+        if (audioWasSuspended)
+            return;
     }
 
     // create buffer and source
@@ -4130,16 +4133,17 @@ class ParticleEmitter extends EngineObject
         
         // build particle
         const particle = new Particle(pos, this.tileInfo, angle, colorStart, colorEnd, particleTime, sizeStart, sizeEnd, this.fadeRate, this.additive,  this.trailScale, this.localSpace && this, this.particleDestroyCallback);
-        particle.velocity     = vec2().setAngle(velocityAngle, speed);
-        particle.fadeRate     = this.fadeRate;
-        particle.damping      = this.damping;
-        particle.angleDamping = this.angleDamping;
-        particle.elasticity   = this.elasticity;
-        particle.friction     = this.friction;
-        particle.gravityScale = this.gravityScale;
-        particle.collideTiles = this.collideTiles;
-        particle.renderOrder  = this.renderOrder;
-        particle.mirror       = !!randInt(2);
+        particle.velocity      = vec2().setAngle(velocityAngle, speed);
+        particle.angleVelocity = angleSpeed;
+        particle.fadeRate      = this.fadeRate;
+        particle.damping       = this.damping;
+        particle.angleDamping  = this.angleDamping;
+        particle.elasticity    = this.elasticity;
+        particle.friction      = this.friction;
+        particle.gravityScale  = this.gravityScale;
+        particle.collideTiles  = this.collideTiles;
+        particle.renderOrder   = this.renderOrder;
+        particle.mirror        = !!randInt(2);
 
         // call particle create callaback
         this.particleCreateCallback && this.particleCreateCallback(particle);
@@ -4822,7 +4826,7 @@ function glDraw(x, y, sizeX, sizeY, angle, uv0X, uv0Y, uv1X, uv1Y, rgba, rgbaAdd
 ///////////////////////////////////////////////////////////////////////////////
 // post processing - can be enabled to pass other canvases through a final shader
 
-let glPostShader, glPostArrayBuffer, glPostTexture, glPostIncludeOverlay;
+let glPostShader, glPostTexture, glPostIncludeOverlay;
 
 /** Set up a post processing shader
  *  @param {String} shaderCode
@@ -4858,7 +4862,6 @@ function glInitPostProcess(shaderCode, includeOverlay=false)
     );
 
     // create buffer and texture
-    glPostArrayBuffer = glContext.createBuffer();
     glPostTexture = glCreateTexture(undefined);
     glPostIncludeOverlay = includeOverlay;
 
