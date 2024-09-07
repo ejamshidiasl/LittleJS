@@ -133,6 +133,8 @@ let inputData = [[]];
 
 function inputUpdate()
 {
+    if (headlessMode) return;
+
     // clear input when lost focus (prevent stuck keys)
     isTouchDevice || document.hasFocus() || clearInput();
 
@@ -145,6 +147,8 @@ function inputUpdate()
 
 function inputUpdatePost()
 {
+    if (headlessMode) return;
+
     // clear input to prepare for next frame
     for (const deviceInputData of inputData)
     for (const i in deviceInputData)
@@ -153,9 +157,12 @@ function inputUpdatePost()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Keyboard event handlers
+// Input event handlers
 
+function inputInit()
 {
+    if (headlessMode) return;
+
     onkeydown = (e)=>
     {
         if (debug && e.target != document.body) return;
@@ -186,21 +193,28 @@ function inputUpdatePost()
             c == 'KeyA' ? 'ArrowLeft' : 
             c == 'KeyD' ? 'ArrowRight' : c : c;
     }
+    
+    // mouse event handlers
+    onmousedown   = (e)=>
+    {
+        isUsingGamepad = false; 
+        inputData[0][e.button] = 3; 
+        mousePosScreen = mouseToScreen(e); 
+        e.button && e.preventDefault();
+    }
+    onmouseup     = (e)=> inputData[0][e.button] = inputData[0][e.button] & 2 | 4;
+    onmousemove   = (e)=> mousePosScreen = mouseToScreen(e);
+    onwheel       = (e)=> mouseWheel = e.ctrlKey ? 0 : sign(e.deltaY);
+    oncontextmenu = (e)=> false; // prevent right click menu
+
+    // init touch input
+    isTouchDevice && touchInputInit();
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// Mouse event handlers
-
-onmousedown = (e)=> {isUsingGamepad = false; inputData[0][e.button] = 3; mousePosScreen = mouseToScreen(e); e.button && e.preventDefault();}
-onmouseup   = (e)=> inputData[0][e.button] = inputData[0][e.button] & 2 | 4;
-onmousemove = (e)=> mousePosScreen = mouseToScreen(e);
-onwheel     = (e)=> mouseWheel = e.ctrlKey ? 0 : sign(e.deltaY);
-oncontextmenu = (e)=> false; // prevent right click menu
 
 // convert a mouse or touch event position to screen space
 function mouseToScreen(mousePos)
 {
-    if (!mainCanvas)
+    if (!mainCanvas || headlessMode)
         return vec2(); // fix bug that can occur if user clicks before page loads
 
     const rect = mainCanvas.getBoundingClientRect();
@@ -211,9 +225,21 @@ function mouseToScreen(mousePos)
 ///////////////////////////////////////////////////////////////////////////////
 // Gamepad input
 
+// gamepad internal variables
 const stickData = [];
+
+// gamepads are updated by engine every frame automatically
 function gamepadsUpdate()
 {
+    const applyDeadZones = (v)=>
+    {
+        const min=.3, max=.8;
+        const deadZone = (v)=> 
+            v >  min ?  percent( v, min, max) : 
+            v < -min ? -percent(-v, min, max) : 0;
+        return vec2(deadZone(v.x), deadZone(-v.y)).clampLength();
+    }
+
     // update touch gamepad if enabled
     if (touchGamepadEnable && isTouchDevice)
     {
@@ -225,7 +251,16 @@ function gamepadsUpdate()
         {
             // read virtual analog stick
             const sticks = stickData[0] || (stickData[0] = []);
-            sticks[0] = vec2(touchGamepadStick.x, -touchGamepadStick.y); // flip vertical
+            sticks[0] = vec2();
+            if (touchGamepadAnalog)
+                sticks[0] = applyDeadZones(touchGamepadStick);
+            else if (touchGamepadStick.lengthSquared() > .3)
+            {
+                // convert to 8 way dpad
+                sticks[0].x = Math.round(touchGamepadStick.x);
+                sticks[0].y = -Math.round(touchGamepadStick.y);
+                sticks[0] = sticks[0].clampLength();
+            }
 
             // read virtual gamepad buttons
             const data = inputData[1] || (inputData[1] = []);
@@ -256,14 +291,9 @@ function gamepadsUpdate()
 
         if (gamepad)
         {
-            // read clamp dead zone of analog sticks
-            const deadZone = .3, deadZoneMax = .8, applyDeadZone = (v)=> 
-                v >  deadZone ?  percent( v, deadZone, deadZoneMax) : 
-                v < -deadZone ? -percent(-v, deadZone, deadZoneMax) : 0;
-
             // read analog sticks
             for (let j = 0; j < gamepad.axes.length-1; j+=2)
-                sticks[j>>1] = vec2(applyDeadZone(gamepad.axes[j]), applyDeadZone(-gamepad.axes[j+1])).clampLength();
+                sticks[j>>1] = applyDeadZones(vec2(gamepad.axes[j],gamepad.axes[j+1]));
             
             // read buttons
             for (let j = gamepad.buttons.length; j--;)
@@ -296,7 +326,7 @@ function gamepadsUpdate()
  *  @param {Number|Array} [pattern] - single value in ms or vibration interval array
  *  @memberof Input */
 function vibrate(pattern=100)
-{ vibrateEnable && navigator && navigator.vibrate && navigator.vibrate(pattern); }
+{ vibrateEnable && !headlessMode && navigator && navigator.vibrate && navigator.vibrate(pattern); }
 
 /** Cancel any ongoing vibration
  *  @memberof Input */
@@ -307,10 +337,10 @@ function vibrateStop() { vibrate(0); }
 
 /** True if a touch device has been detected
  *  @memberof Input */
-const isTouchDevice = window.ontouchstart !== undefined;
+const isTouchDevice = !headlessMode && window.ontouchstart !== undefined;
 
 // try to enable touch mouse
-if (isTouchDevice)
+function touchInputInit()
 {
     // override mouse events
     let wasTouching;
@@ -392,14 +422,7 @@ function createTouchGamepad()
             if (touchPos.distance(stickCenter) < touchGamepadSize)
             {
                 // virtual analog stick
-                if (touchGamepadAnalog)
-                    touchGamepadStick = touchPos.subtract(stickCenter).scale(2/touchGamepadSize).clampLength();
-                else
-                {
-                    // 8 way dpad
-                    const angle = touchPos.subtract(stickCenter).angle();
-                    touchGamepadStick.setAngle((angle * 4 / PI + 8.5 | 0) * PI / 4);
-                }
+                touchGamepadStick = touchPos.subtract(stickCenter).scale(2/touchGamepadSize).clampLength();
             }
             else if (touchPos.distance(buttonCenter) < touchGamepadSize)
             {

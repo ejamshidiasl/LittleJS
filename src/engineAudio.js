@@ -31,7 +31,7 @@ class Sound
      */
     constructor(zzfxSound, range=soundDefaultRange, taper=soundDefaultTaper)
     {
-        if (!soundEnable) return;
+        if (!soundEnable || headlessMode) return;
 
         /** @property {Number} - World space max range of sound, will not play if camera is farther away */
         this.range = range;
@@ -62,7 +62,7 @@ class Sound
      */
     play(pos, volume=1, pitch=1, randomnessScale=1, loop=false)
     {
-        if (!soundEnable || !this.sampleChannels) return;
+        if (!soundEnable || !this.sampleChannels || headlessMode) return;
 
         let pan;
         if (pos)
@@ -145,7 +145,9 @@ class SoundWave extends Sound
         super(undefined, range, taper);
         this.randomness = randomness;
 
-        if (!soundEnable) return;
+        if (!soundEnable || headlessMode) return;
+        if (!audioContext)
+            audioContext = new AudioContext; // create audio context
 
         fetch(filename)
         .then(response => response.arrayBuffer())
@@ -199,7 +201,7 @@ class Music extends Sound
     {
         super(undefined);
 
-        if (!soundEnable) return;
+        if (!soundEnable || headlessMode) return;
         this.randomness = 0;
         this.sampleChannels = zzfxM(...zzfxMusic);
         this.sampleRate = zzfxR;
@@ -222,7 +224,7 @@ class Music extends Sound
  *  @memberof Audio */
 function playAudioFile(filename, volume=1, loop=false)
 {
-    if (!soundEnable) return;
+    if (!soundEnable || headlessMode) return;
 
     const audio = new Audio(filename);
     audio.volume = soundVolume * volume;
@@ -241,7 +243,7 @@ function playAudioFile(filename, volume=1, loop=false)
  *  @memberof Audio */
 function speak(text, language='', volume=1, rate=1, pitch=1)
 {
-    if (!soundEnable || !speechSynthesis) return;
+    if (!soundEnable || !speechSynthesis || headlessMode) return;
 
     // common languages (not supported by all browsers)
     // en - english,  it - italian, fr - french,  de - german, es - spanish
@@ -274,7 +276,7 @@ function getNoteFrequency(semitoneOffset, rootFrequency=220)
 /** Audio context used by the engine
  *  @type {AudioContext}
  *  @memberof Audio */
-let audioContext = new AudioContext;
+let audioContext;
 
 /** Keep track if audio was suspended when last sound was played
  *  @type {Boolean}
@@ -292,7 +294,9 @@ let audioSuspended = false;
  *  @memberof Audio */
 function playSamples(sampleChannels, volume=1, rate=1, pan=0, loop=false, sampleRate=zzfxR) 
 {
-    if (!soundEnable) return;
+    if (!soundEnable || headlessMode) return;
+    if (!audioContext)
+        audioContext = new AudioContext; // create audio context
 
     // prevent sounds from building up if they can't be played
     const audioWasSuspended = audioSuspended;

@@ -101,22 +101,36 @@ class EngineObject
         this.collideSolidObjects = false;
         /** @property {Boolean} - Object collides with and blocks other objects */
         this.isSolid = false;
+        /** @property {Boolean} - Object collides with raycasts */
+        this.collideRaycast = false;
 
         // add to list of objects
         engineObjects.push(this);
     }
     
-    /** Update the object transform and physics, called automatically by engine once each frame */
-    update()
+    /** Update the object transform, called automatically by engine even when paused */
+    updateTransforms()
     {
         const parent = this.parent;
         if (parent)
         {
             // copy parent pos/angle
-            this.pos = this.localPos.multiply(vec2(parent.getMirrorSign(),1)).rotate(-parent.angle).add(parent.pos);
-            this.angle = parent.getMirrorSign()*this.localAngle + parent.angle;
-            return;
+            const mirror = parent.getMirrorSign();
+            this.pos = this.localPos.multiply(vec2(mirror,1)).rotate(-parent.angle).add(parent.pos);
+            this.angle = mirror*this.localAngle + parent.angle;
         }
+
+        // update children
+        for (const child of this.children)
+            child.updateTransforms();
+    }
+
+    /** Update the object physics, called automatically by engine once each frame */
+    update()
+    {
+        // child objects do not have physics
+        if (this.parent)
+            return;
 
         // limit max speed to prevent missing collisions
         this.velocity.x = clamp(this.velocity.x, -objectMaxSpeed, objectMaxSpeed);
@@ -132,8 +146,7 @@ class EngineObject
         // physics sanity checks
         ASSERT(this.angleDamping >= 0 && this.angleDamping <= 1);
         ASSERT(this.damping >= 0 && this.damping <= 1);
-
-        if (!enablePhysicsSolver || !this.mass) // do not update collision for fixed objects
+        if (!enablePhysicsSolver || !this.mass) // dont do collision for fixed objects
             return;
 
         const wasMovingDown = this.velocity.y < 0;
@@ -305,13 +318,7 @@ class EngineObject
      *  @param {Number}  tileData - the value of the tile at the position
      *  @param {Vector2} pos      - tile where the collision occured
      *  @return {Boolean}         - true if the collision should be resolved */
-    collideWithTile(tileData, pos)        { return tileData > 0; }
-    
-    /** Called to check if a tile raycast hit
-     *  @param {Number}  tileData - the value of the tile at the position
-     *  @param {Vector2} pos      - tile where the raycast is
-     *  @return {Boolean}         - true if the raycast should hit */
-    collideWithTileRaycast(tileData, pos) { return tileData > 0; }
+    collideWithTile(tileData, pos)    { return tileData > 0; }
 
     /** Called to check if a object collision should be resolved
      *  @param {EngineObject} object - the object to test against
@@ -358,16 +365,18 @@ class EngineObject
     }
 
     /** Set how this object collides
-     *  @param {Boolean} [collideSolidObjects] - Does it collide with solid objects
-     *  @param {Boolean} [isSolid]             - Does it collide with and block other objects (expensive in large numbers)
-     *  @param {Boolean} [collideTiles]        - Does it collide with the tile collision */
-    setCollision(collideSolidObjects=true, isSolid=true, collideTiles=true)
+     *  @param {Boolean} [collideSolidObjects] - Does it collide with solid objects?
+     *  @param {Boolean} [isSolid]             - Does it collide with and block other objects? (expensive in large numbers)
+     *  @param {Boolean} [collideTiles]        - Does it collide with the tile collision?
+     *  @param {Boolean} [collideRaycast]      - Does it collide with raycasts? */
+    setCollision(collideSolidObjects=true, isSolid=true, collideTiles=true, collideRaycast=true)
     {
         ASSERT(collideSolidObjects || !isSolid, 'solid objects must be set to collide');
 
         this.collideSolidObjects = collideSolidObjects;
         this.isSolid = isSolid;
         this.collideTiles = collideTiles;
+        this.collideRaycast = collideRaycast;
     }
 
     /** Returns string containg info about this object for debugging

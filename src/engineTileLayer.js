@@ -72,7 +72,7 @@ function tileCollisionTest(pos, size=vec2(), object)
     }
 }
 
-/** Return the center of tile if any that is hit (does not return the exact intersection)
+/** Return the center of first tile hit (does not return the exact intersection)
  *  @param {Vector2}      posStart
  *  @param {Vector2}      posEnd
  *  @param {EngineObject} [object]
@@ -192,6 +192,17 @@ class TileLayer extends EngineObject
         this.data = [];
         for (let j = this.size.area(); j--;)
             this.data.push(new TileLayerData);
+
+        if (headlessMode)
+        {
+            // disable rendering
+            this.redraw       = () => {};
+            this.render       = () => {};
+            this.redrawStart  = () => {};
+            this.redrawEnd    = () => {};
+            this.drawTileData = () => {};
+            this.drawCanvas2D = () => {};
+        }
     }
     
     /** Set data at a given position in the array 
@@ -222,7 +233,7 @@ class TileLayer extends EngineObject
         ASSERT(mainContext != this.context, 'must call redrawEnd() after drawing tiles');
 
         // flush and copy gl canvas because tile canvas does not use webgl
-        glEnable && !glOverlay && !this.isOverlay && glCopyToContext(mainContext);
+        !glOverlay && !this.isOverlay && glCopyToContext(mainContext);
         
         // draw the entire cached level onto the canvas
         const pos = worldToScreen(this.pos.add(vec2(0,this.size.y*this.scale.y)));
@@ -268,15 +279,18 @@ class TileLayer extends EngineObject
             mainCanvas.height = mainCanvasSize.y;
         }
 
-        // begin a new render for the tile canvas
-        enginePreRender();
+        // disable smoothing for pixel art
+        this.context.imageSmoothingEnabled = !canvasPixelated;
+
+        // setup gl rendering if enabled
+        glPreRender();
     }
 
     /** Call to end the redraw process */
     redrawEnd()
     {
         ASSERT(mainContext == this.context, 'must call redrawStart() before drawing tiles');
-        glEnable && glCopyToContext(mainContext, true);
+        glCopyToContext(mainContext, true);
         //debugSaveCanvas(this.canvas);
 
         // set stuff back to normal

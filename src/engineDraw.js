@@ -74,6 +74,9 @@ let drawCount;
  */
 function tile(pos=vec2(), size=tileSizeDefault, textureIndex=0)
 {
+    if (headlessMode)
+        return new TileInfo;
+
     // if size is a number, make it a vector
     if (typeof size === 'number')
     {
@@ -107,19 +110,29 @@ class TileInfo
     constructor(pos=vec2(), size=tileSizeDefault, textureIndex=0)
     {
         /** @property {Vector2} - Top left corner of tile in pixels */
-        this.pos = pos;
+        this.pos = pos.copy();
         /** @property {Vector2} - Size of tile in pixels */
-        this.size = size;
+        this.size = size.copy();
         /** @property {Number} - Texture index to use */
         this.textureIndex = textureIndex;
     }
 
-    /** Returns an offset copy of this tile, useful for animation
+    /** Returns a copy of this tile offset by a vector
     *  @param {Vector2} offset - Offset to apply in pixels
     *  @return {TileInfo}
     */
     offset(offset)
     { return new TileInfo(this.pos.add(offset), this.size, this.textureIndex); }
+
+    /** Returns a copy of this tile offset by a number of animation frames
+    *  @param {Number} frame - Offset to apply in animation frames
+    *  @return {TileInfo}
+    */
+    frame(frame)
+    {
+        ASSERT(typeof frame == 'number');
+        return this.offset(vec2(frame*this.size.x, 0));
+    }
 
     /** Returns the texture info for this tile
     *  @return {TextureInfo}
